@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tonnetz Chord Random Journey Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .note-cell {
+      transition: all 0.2s;
+      cursor: pointer;
+      user-select: none;
+    }
+    .note-cell:hover { transform: scale(1.08); }
+    .note-cell.highlighted { stroke-width: 3; }
+    .chord-node {
+      transition: all 0.25s;
+      cursor: pointer;
+    }
+    .chord-node:hover { transform: scale(1.12); }
+    .chord-node.active { filter: drop-shadow(0 0 8px #a78bfa); }
+    .journey-step {
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .rel-tag { font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-violet-700 rounded-lg flex items-center justify-center text-xl" aria-hidden="true">🎼</div>
+        <div>
+          <h1 class="text-xl font-bold text-white">Tonnetz Chord Journey Explorer</h1>
+          <p class="text-sm text-gray-400">Explore harmonic relationships on the Tonnetz lattice</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button id="random-btn" class="bg-violet-700 hover:bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition" aria-label="Generate random chord progression">Random Journey</button>
+        <button id="clear-btn" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition" aria-label="Clear journey">Clear</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-6" role="main">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Left: Tonnetz + current chord info -->
+      <div class="lg:col-span-2">
+        <!-- SVG Tonnetz -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
+          <h2 class="text-sm font-semibold text-gray-400 mb-3">Tonnetz Lattice <span class="text-xs text-gray-600 ml-2">— click a note to see chords</span></h2>
+          <svg id="tonnetz-svg" width="100%" viewBox="0 0 640 280" role="img" aria-label="Tonnetz harmonic lattice"></svg>
+        </div>
+
+        <!-- Current Chord -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-semibold text-white">Current Chord: <span id="current-chord-name" class="text-violet-300">—</span></h2>
+            <span id="current-chord-type" class="text-xs bg-violet-900 text-violet-200 px-2.5 py-0.5 rounded-full"></span>
+          </div>
+          <div id="current-notes" class="flex gap-2 mb-4"></div>
+          <div>
+            <div class="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Adjacent Chords by Relationship</div>
+            <div id="adjacent-chords" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+          </div>
+        </div>
+
+        <!-- Theory Panel -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h2 class="text-sm font-semibold text-white mb-3">Tonnetz Relationships</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div class="bg-gray-800 rounded-lg p-3">
+              <div class="text-green-400 font-semibold mb-1">Parallel (P)</div>
+              <p class="text-gray-400 text-xs">Same root, switch major↔minor. Share 2 notes. E.g. C major → C minor (C,E,G → C,E♭,G)</p>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-3">
+              <div class="text-blue-400 font-semibold mb-1">Relative (R)</div>
+              <p class="text-gray-400 text-xs">Share 2 notes; move one note by whole step. E.g. C major → A minor (C,E,G → A,C,E)</p>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-3">
+              <div class="text-yellow-400 font-semibold mb-1">Leading-tone (L)</div>
+              <p class="text-gray-400 text-xs">Share 2 notes; move one note by semitone. E.g. C major → E minor (C,E,G → B,E,G)</p>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-3">
+              <div class="text-rose-400 font-semibold mb-1">Subdominant (S) / Dominant (D)</div>
+              <p class="text-gray-400 text-xs">Fifth relationships: move up (dominant, V) or down (subdominant, IV) a perfect fifth.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Journey Log + Controls -->
+      <div class="space-y-4">
+
+        <!-- Journey Log -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold text-white">Chord Journey</h2>
+            <span id="journey-len" class="text-xs text-gray-500">0 chords</span>
+          </div>
+          <div id="journey-log" class="space-y-1.5 max-h-64 overflow-y-auto mb-3"></div>
+          <div id="journey-empty" class="text-gray-600 text-sm text-center py-4">Click a chord or press "Random Journey"</div>
+          <div id="progression-text" class="text-xs text-violet-400 font-mono bg-gray-800 rounded p-2 hidden"></div>
+        </div>
+
+        <!-- Chord Selector -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h2 class="text-sm font-semibold text-white mb-3">Start From Chord</h2>
+          <div class="grid grid-cols-3 gap-1.5 mb-3" id="chord-grid" role="group" aria-label="Select starting chord"></div>
+          <div class="flex gap-2">
+            <select id="chord-type" class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-violet-500" aria-label="Chord type">
+              <option value="major">Major</option>
+              <option value="minor">Minor</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h2 class="text-sm font-semibold text-white mb-2">Journey Stats</h2>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="bg-gray-800 rounded p-2"><div class="text-gray-500">Steps</div><div id="stat-steps" class="text-violet-300 font-mono font-bold text-base">0</div></div>
+            <div class="bg-gray-800 rounded p-2"><div class="text-gray-500">Most used rel.</div><div id="stat-rel" class="text-violet-300 font-mono font-bold text-base">—</div></div>
+            <div class="bg-gray-800 rounded p-2"><div class="text-gray-500">Unique chords</div><div id="stat-unique" class="text-violet-300 font-mono font-bold text-base">0</div></div>
+            <div class="bg-gray-800 rounded p-2"><div class="text-gray-500">Tonal centre</div><div id="stat-tonal" class="text-violet-300 font-mono font-bold text-base">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const NOTE_NAMES = { 'C#':'D♭','D#':'E♭','F#':'G♭','G#':'A♭','A#':'B♭' };
+    function noteName(n) { return NOTE_NAMES[n] || n; }
+
+    // Chord: { root, type (major/minor), notes: [root, third, fifth] }
+    function buildChord(root, type) {
+      const rootIdx = NOTES.indexOf(root);
+      if (rootIdx < 0) return null;
+      const third = type === 'major' ? (rootIdx + 4) % 12 : (rootIdx + 3) % 12;
+      const fifth = (rootIdx + 7) % 12;
+      return { root, type, notes: [NOTES[rootIdx], NOTES[third], NOTES[fifth]] };
+    }
+
+    function chordId(root, type) { return root + '_' + type; }
+
+    // Tonnetz transforms (Neo-Riemannian)
+    function transform(chord, rel) {
+      const ri = NOTES.indexOf(chord.root);
+      const { type } = chord;
+      let newRoot, newType;
+      switch(rel) {
+        case 'P': // Parallel: same root, flip quality
+          newRoot = chord.root; newType = type === 'major' ? 'minor' : 'major'; break;
+        case 'R': // Relative: major→submediant minor, minor→mediant major
+          if (type === 'major') { newRoot = NOTES[(ri + 9) % 12]; newType = 'minor'; }
+          else { newRoot = NOTES[(ri + 3) % 12]; newType = 'major'; } break;
+        case 'L': // Leading-tone exchange
+          if (type === 'major') { newRoot = NOTES[(ri + 4) % 12]; newType = 'minor'; }
+          else { newRoot = NOTES[(ri - 4 + 12) % 12]; newType = 'major'; } break;
+        case 'D': // Dominant: move root up a 5th (major only → major)
+          newRoot = NOTES[(ri + 7) % 12]; newType = type; break;
+        case 'S': // Subdominant: move root down a 5th
+          newRoot = NOTES[(ri + 5) % 12]; newType = type; break;
+        case 'PR': // Composite
+          return transform(transform(chord, 'P'), 'R');
+        default: return chord;
+      }
+      return buildChord(newRoot, newType);
+    }
+
+    const REL_COLORS = { P: '#4ade80', R: '#60a5fa', L: '#facc15', D: '#f472b6', S: '#fb923c' };
+    const REL_LABELS = { P: 'Parallel', R: 'Relative', L: 'Leading-tone', D: 'Dominant', S: 'Subdominant' };
+    const ALL_RELS = ['P','R','L','D','S'];
+
+    let currentChord = buildChord('C', 'major');
+    let journey = [];
+    let relCounts = {};
+
+    const STORAGE_KEY = 'tonnetzJourney';
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ journey, current: currentChord }));
+    }
+    function loadState() {
+      try {
+        const s = localStorage.getItem(STORAGE_KEY);
+        if (s) {
+          const d = JSON.parse(s);
+          if (d.journey) journey = d.journey;
+          if (d.current) currentChord = d.current;
+        }
+      } catch(e) {}
+    }
+
+    function setChord(chord, relUsed) {
+      currentChord = chord;
+      if (relUsed) {
+        journey.push({ chord, rel: relUsed });
+        relCounts[relUsed] = (relCounts[relUsed] || 0) + 1;
+      } else {
+        journey = [{ chord, rel: null }];
+        relCounts = {};
+      }
+      saveState();
+      renderAll();
+    }
+
+    function renderAll() {
+      renderCurrentChord();
+      renderJourney();
+      renderStats();
+      drawTonnetz();
+    }
+
+    function renderCurrentChord() {
+      const c = currentChord;
+      const name = noteName(c.root) + (c.type === 'major' ? '' : 'm');
+      document.getElementById('current-chord-name').textContent = name;
+      document.getElementById('current-chord-type').textContent = c.type.charAt(0).toUpperCase() + c.type.slice(1);
+
+      const notesEl = document.getElementById('current-notes');
+      notesEl.innerHTML = '';
+      c.notes.forEach(n => {
+        const span = document.createElement('span');
+        span.className = 'bg-violet-900 text-violet-200 px-3 py-1 rounded-full text-sm font-medium';
+        span.textContent = noteName(n);
+        notesEl.appendChild(span);
+      });
+
+      const adjEl = document.getElementById('adjacent-chords');
+      adjEl.innerHTML = '';
+      ALL_RELS.forEach(rel => {
+        const next = transform(c, rel);
+        if (!next) return;
+        const btn = document.createElement('button');
+        btn.className = 'chord-node bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl p-3 text-left transition';
+        btn.setAttribute('aria-label', REL_LABELS[rel] + ': ' + noteName(next.root) + (next.type === 'minor' ? ' minor' : ' major'));
+        const relTag = document.createElement('div');
+        relTag.className = 'rel-tag font-semibold mb-1';
+        relTag.style.background = REL_COLORS[rel] + '22';
+        relTag.style.color = REL_COLORS[rel];
+        relTag.textContent = rel + ' — ' + REL_LABELS[rel];
+        const chName = document.createElement('div');
+        chName.className = 'text-white font-bold text-base';
+        chName.textContent = noteName(next.root) + (next.type === 'minor' ? 'm' : '');
+        const chNotes = document.createElement('div');
+        chNotes.className = 'text-xs text-gray-500 mt-0.5';
+        chNotes.textContent = next.notes.map(noteName).join(' – ');
+        btn.appendChild(relTag);
+        btn.appendChild(chName);
+        btn.appendChild(chNotes);
+        btn.addEventListener('click', () => setChord(next, rel));
+        adjEl.appendChild(btn);
+      });
+    }
+
+    function renderJourney() {
+      const log = document.getElementById('journey-log');
+      const empty = document.getElementById('journey-empty');
+      const progText = document.getElementById('progression-text');
+      log.innerHTML = '';
+      if (journey.length === 0) { empty.classList.remove('hidden'); progText.classList.add('hidden'); return; }
+      empty.classList.add('hidden');
+      journey.forEach((step, i) => {
+        const div = document.createElement('div');
+        div.className = 'journey-step flex items-center gap-2 text-sm';
+        const num = document.createElement('span');
+        num.className = 'text-gray-600 font-mono text-xs w-4 flex-shrink-0';
+        num.textContent = (i + 1);
+        const chordEl = document.createElement('span');
+        chordEl.className = 'font-bold ' + (i === journey.length - 1 ? 'text-violet-300' : 'text-gray-300');
+        chordEl.textContent = noteName(step.chord.root) + (step.chord.type === 'minor' ? 'm' : '');
+        div.appendChild(num);
+        if (step.rel) {
+          const arrow = document.createElement('span');
+          arrow.className = 'text-xs font-medium px-1.5 py-0.5 rounded';
+          arrow.style.color = REL_COLORS[step.rel];
+          arrow.style.background = REL_COLORS[step.rel] + '22';
+          arrow.textContent = step.rel;
+          div.appendChild(arrow);
+        }
+        div.appendChild(chordEl);
+        log.appendChild(div);
+      });
+      document.getElementById('journey-len').textContent = journey.length + ' chords';
+      const prog = journey.map(s => noteName(s.chord.root) + (s.chord.type === 'minor' ? 'm' : '')).join(' → ');
+      progText.textContent = prog;
+      progText.classList.remove('hidden');
+    }
+
+    function renderStats() {
+      document.getElementById('stat-steps').textContent = Math.max(0, journey.length - 1);
+      const uniqueChords = new Set(journey.map(s => chordId(s.chord.root, s.chord.type))).size;
+      document.getElementById('stat-unique').textContent = uniqueChords;
+      const topRel = Object.entries(relCounts).sort((a,b)=>b[1]-a[1])[0];
+      document.getElementById('stat-rel').textContent = topRel ? topRel[0] + ' (×' + topRel[1] + ')' : '—';
+      // Tonal centre: most frequent root
+      const rootFreq = {};
+      journey.forEach(s => { rootFreq[s.chord.root] = (rootFreq[s.chord.root]||0)+1; });
+      const topRoot = Object.entries(rootFreq).sort((a,b)=>b[1]-a[1])[0];
+      document.getElementById('stat-tonal').textContent = topRoot ? noteName(topRoot[0]) : '—';
+    }
+
+    // Tonnetz drawing
+    function drawTonnetz() {
+      const svg = document.getElementById('tonnetz-svg');
+      svg.innerHTML = '';
+      const W = 640, H = 280;
+      const hexW = 52, hexH = 44;
+      const cols = 12, rows = 5;
+
+      // The Tonnetz: rows go by minor 3rds (3 semitones), columns go by 5ths (7 semitones)
+      // Cell (col, row) has pitch class (col*7 + row*3) mod 12
+      const activeNotes = new Set(currentChord.notes);
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const pc = (col * 7 + row * 3) % 12;
+          const note = NOTES[pc];
+          const cx = col * hexW + (row % 2) * (hexW/2) + hexW/2;
+          const cy = row * hexH + hexH/2;
+
+          // Draw connections (horizontal 5th, diagonal major 3rd)
+          if (col < cols - 1) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+            line.setAttribute('x1', cx); line.setAttribute('y1', cy);
+            const nc = ((col+1)*7 + row*3)%12;
+            const nx = (col+1)*hexW + (row%2)*(hexW/2) + hexW/2;
+            line.setAttribute('x2', nx); line.setAttribute('y2', cy);
+            line.setAttribute('stroke', '#374151'); line.setAttribute('stroke-width','1.5');
+            svg.appendChild(line);
+          }
+          if (row < rows - 1) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+            line.setAttribute('x1', cx); line.setAttribute('y1', cy);
+            const nx2 = col*hexW + ((row+1)%2)*(hexW/2) + hexW/2;
+            const ny2 = (row+1)*hexH + hexH/2;
+            line.setAttribute('x2', nx2); line.setAttribute('y2', ny2);
+            line.setAttribute('stroke', '#374151'); line.setAttribute('stroke-width','1');
+            svg.appendChild(line);
+          }
+        }
+      }
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const pc = (col * 7 + row * 3) % 12;
+          const note = NOTES[pc];
+          const cx = col * hexW + (row % 2) * (hexW/2) + hexW/2;
+          const cy = row * hexH + hexH/2;
+          const isActive = activeNotes.has(note);
+          const isRoot = note === currentChord.root;
+
+          const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+          circle.setAttribute('cx', cx); circle.setAttribute('cy', cy); circle.setAttribute('r', isActive ? 19 : 16);
+          circle.setAttribute('fill', isRoot ? '#7c3aed' : isActive ? '#4c1d95' : '#1f2937');
+          circle.setAttribute('stroke', isRoot ? '#a78bfa' : isActive ? '#6d28d9' : '#374151');
+          circle.setAttribute('stroke-width', isActive ? 2 : 1);
+          circle.classList.add('note-cell');
+          circle.setAttribute('role', 'button');
+          circle.setAttribute('tabindex', '0');
+          circle.setAttribute('aria-label', 'Note ' + noteName(note));
+          svg.appendChild(circle);
+
+          const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+          text.setAttribute('x', cx); text.setAttribute('y', cy + 4.5);
+          text.setAttribute('text-anchor','middle');
+          text.setAttribute('font-size', note.includes('#') ? '9' : '11');
+          text.setAttribute('font-weight', isActive ? '700' : '400');
+          text.setAttribute('fill', isActive ? '#e9d5ff' : '#9ca3af');
+          text.setAttribute('pointer-events','none');
+          text.textContent = noteName(note);
+          svg.appendChild(text);
+        }
+      }
+    }
+
+    // Chord grid
+    const chordGrid = document.getElementById('chord-grid');
+    NOTES.forEach(n => {
+      const btn = document.createElement('button');
+      btn.className = 'bg-gray-800 hover:bg-violet-900 border border-gray-700 hover:border-violet-700 text-white py-1.5 rounded-lg text-xs font-medium transition';
+      btn.textContent = noteName(n);
+      btn.setAttribute('aria-label', 'Start with ' + noteName(n));
+      btn.addEventListener('click', () => {
+        const type = document.getElementById('chord-type').value;
+        setChord(buildChord(n, type), null);
+      });
+      chordGrid.appendChild(btn);
+    });
+
+    // Random journey
+    document.getElementById('random-btn').addEventListener('click', () => {
+      const startRoot = NOTES[Math.floor(Math.random() * 12)];
+      const startType = Math.random() > 0.5 ? 'major' : 'minor';
+      let chord = buildChord(startRoot, startType);
+      journey = [{ chord, rel: null }];
+      relCounts = {};
+      const steps = 5 + Math.floor(Math.random() * 6);
+      for (let i = 0; i < steps; i++) {
+        const rel = ALL_RELS[Math.floor(Math.random() * ALL_RELS.length)];
+        const next = transform(chord, rel);
+        if (next) {
+          journey.push({ chord: next, rel });
+          relCounts[rel] = (relCounts[rel] || 0) + 1;
+          chord = next;
+        }
+      }
+      currentChord = chord;
+      saveState();
+      renderAll();
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      journey = []; relCounts = {};
+      saveState();
+      renderAll();
+    });
+
+    loadState();
+    renderAll();
+  </script>
+</body>
+</html>
